@@ -1,0 +1,14 @@
+id: firefox
+title: Firefox
+description: Ubuntu に Firefox (Mozilla 公式パッケージ) をインストール。
+image: wcs-gui/firefox:latest
+port: 5800
+hostPort: 5800
+guiPath: /vnc.html?autoconnect=1&resize=remote
+shm: 2g
+color: "#ff7139"
+order: 0
+build:
+  context: .
+  requires: [ubuntu-base]
+readyCommand: [sh, -c, 'for i in $(seq 1 60); do pgrep -x "firefox(-bin)?" >/dev/null && exit 0; sleep 1; done; exit 1']

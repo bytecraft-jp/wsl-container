@@ -1,0 +1,14 @@
+id: filezilla
+title: FileZilla
+description: Ubuntu に FileZilla をインストール。
+image: wcs-gui/filezilla:latest
+port: 5800
+hostPort: 5820
+guiPath: /vnc.html?autoconnect=1&resize=remote
+shm: 1g
+color: "#bf0000"
+order: 8
+build:
+  context: .
+  requires: [ubuntu-base]
+readyCommand: [sh, -c, 'for i in $(seq 1 60); do pgrep -x filezilla >/dev/null && exit 0; sleep 1; done; exit 1']

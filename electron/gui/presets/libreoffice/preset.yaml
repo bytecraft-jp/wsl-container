@@ -1,0 +1,14 @@
+id: libreoffice
+title: LibreOffice
+description: Ubuntu に LibreOffice と日本語パックをインストール。
+image: wcs-gui/libreoffice:latest
+port: 5800
+hostPort: 3300
+guiPath: /vnc.html?autoconnect=1&resize=remote
+shm: 1g
+color: "#18a303"
+order: 5
+build:
+  context: .
+  requires: [ubuntu-base]
+readyCommand: [sh, -c, 'for i in $(seq 1 60); do pgrep -x soffice.bin >/dev/null && exit 0; sleep 1; done; exit 1']

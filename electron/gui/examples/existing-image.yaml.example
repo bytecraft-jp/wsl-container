@@ -1,0 +1,10 @@
+# Build the bundled Firefox preset first, then copy this file as my-firefox.yaml.
+id: my-firefox
+title: 自分用 Firefox
+description: ビルド済みの Ubuntu Firefox イメージを使います
+image: wcs-gui/firefox:latest
+port: 5800
+hostPort: 3602
+guiPath: /vnc.html?autoconnect=1&resize=remote
+shm: 2g
+color: "#ff7139"

@@ -1,0 +1,14 @@
+id: ubuntu-gnome
+title: Ubuntu デスクトップ (GNOME)
+description: Ubuntu 標準の GNOME デスクトップ (ドック付き) をインストール。
+image: wcs-gui/ubuntu-gnome:latest
+port: 5800
+hostPort: 3400
+guiPath: /vnc.html?autoconnect=1&resize=remote
+shm: 1g
+color: "#e95420"
+order: 3
+build:
+  context: .
+  requires: [ubuntu-base]
+readyCommand: [sh, -c, 'for i in $(seq 1 60); do pgrep -x gnome-shell >/dev/null && xprop -root _NET_SUPPORTING_WM_CHECK | grep -q "window id" && exit 0; sleep 1; done; exit 1']

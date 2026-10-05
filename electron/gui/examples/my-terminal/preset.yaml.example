@@ -1,0 +1,12 @@
+# Copy this directory into data/gui-presets/my-terminal/ and rename to preset.yaml.
+id: my-terminal
+title: 自作ターミナル
+description: 同じフォルダーの Dockerfile からビルドします
+image: wcs-gui/my-terminal:latest
+port: 5800
+hostPort: 3601
+guiPath: /vnc.html?autoconnect=1&resize=remote
+color: "#6c8cff"
+build:
+  context: .
+  requires: [ubuntu-base]

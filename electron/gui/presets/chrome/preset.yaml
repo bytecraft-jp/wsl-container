@@ -1,0 +1,14 @@
+id: chrome
+title: Google Chrome
+description: Ubuntu に Google Chrome (Google 公式パッケージ) をインストール。
+image: wcs-gui/chrome:latest
+port: 5800
+hostPort: 3100
+guiPath: /vnc.html?autoconnect=1&resize=remote
+shm: 1g
+color: "#4c8bf5"
+order: 1
+build:
+  context: .
+  requires: [ubuntu-base]
+readyCommand: [sh, -c, 'for i in $(seq 1 60); do pgrep -x chrome >/dev/null && exit 0; sleep 1; done; exit 1']

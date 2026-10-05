@@ -1,0 +1,14 @@
+id: ubuntu-xfce
+title: Ubuntu デスクトップ (XFCE)
+description: Ubuntu に XFCE デスクトップをインストール。
+image: wcs-gui/ubuntu-xfce:latest
+port: 5800
+hostPort: 3200
+guiPath: /vnc.html?autoconnect=1&resize=remote
+shm: 1g
+color: "#2284f2"
+order: 2
+build:
+  context: .
+  requires: [ubuntu-base]
+readyCommand: [sh, -c, 'for i in $(seq 1 60); do pgrep -x xfce4-session >/dev/null && exit 0; sleep 1; done; exit 1']

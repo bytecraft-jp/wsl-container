@@ -1,0 +1,13 @@
+# Copy this directory into data/gui-presets/gimp/ and rename to preset.yaml.
+id: gimp
+title: GIMP
+description: Ubuntu に GIMP をインストールします
+image: wcs-gui/gimp:latest
+port: 5800
+hostPort: 3600
+guiPath: /vnc.html?autoconnect=1&resize=remote
+shm: 1g
+color: "#737373"
+build:
+  context: .
+  requires: [ubuntu-base]

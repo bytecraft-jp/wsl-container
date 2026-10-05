@@ -1,0 +1,8 @@
+id: ubuntu-base
+title: Ubuntu 日本語ベース
+description: Ubuntu 22.04・日本語ロケール・Fcitx5 + Mozc・TigerVNC/noVNC の共通ベース。
+image: wcs-gui/ubuntu-base:22.04
+hidden: true
+port: 5800
+build:
+  context: .

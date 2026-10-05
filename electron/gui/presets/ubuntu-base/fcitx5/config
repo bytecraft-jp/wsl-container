@@ -1,0 +1,6 @@
+[Behavior]
+ActiveByDefault=False
+
+# Windows のキーボードと同じ「半角/全角」キーで切り替える
+[Hotkey/TriggerKeys]
+0=Zenkaku_Hankaku
