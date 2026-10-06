@@ -50,8 +50,19 @@ async function inspectMany(ids) {
 }
 
 async function imageExists(image) {
+  return !!(await imageId(image));
+}
+
+/** イメージ ID (sha256:...)。存在しなければ空文字 */
+async function imageId(image) {
   const r = await wslc.run(['inspect', '--type', 'image', image]);
-  return r.code === 0;
+  if (r.code !== 0) return '';
+  try {
+    const j = JSON.parse(r.stdout);
+    return (Array.isArray(j) ? j[0] : j)?.Id || '';
+  } catch {
+    return '';
+  }
 }
 
 /** プロジェクトに属するコンテナー一覧 (inspect 結果) */
@@ -114,15 +125,20 @@ async function up(file, opts = {}, log = () => {}) {
       if (plans[d.name]) await waitFor(plans[d.name].containerName, d.condition, log);
     }
 
-    if (plan.build && (opts.build || !(await imageExists(plan.image)))) {
+    // build を持つサービスは毎回ビルドする (変更がなければキャッシュで終わる)。
+    // Dockerfile やビルドコンテキストの変更を up だけで反映するため。
+    if (plan.build) {
       await streamed(plan.build.args, log, { cwd: ctx.baseDir });
-    } else if (!plan.build && (opts.pull || !(await imageExists(plan.image)))) {
+    } else if (opts.pull || !(await imageExists(plan.image))) {
       await streamed(['pull', plan.image], log);
     }
 
     const [existing] = await inspectMany([plan.containerName]);
     if (existing) {
-      const same = labelsOf(existing)[core.LABEL_HASH] === plan.hash;
+      const currentImage = await imageId(plan.image);
+      const imageChanged = !!currentImage && !!existing.Image && existing.Image !== currentImage;
+      if (imageChanged) log(`… ${plan.image} が更新されています\n`);
+      const same = labelsOf(existing)[core.LABEL_HASH] === plan.hash && !imageChanged;
       if (same && !opts.forceRecreate) {
         if (existing.State?.Running) {
           log(`✔ ${plan.containerName} は最新です\n`);

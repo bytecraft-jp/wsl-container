@@ -19,7 +19,7 @@
         <span class="muted small">{{ images.length }} 個 · 合計 {{ total }}</span>
         <div class="spacer"></div>
         <button class="btn sm" @click="load"><Upload />tar から読み込み</button>
-        <button class="btn sm" @click="prune(false)"><Eraser />未使用 (dangling) を削除</button>
+        <button class="btn sm" @click="pruneUnused"><Eraser />未使用を削除</button>
         <button class="btn icon" title="更新" @click="refresh"><RefreshCw :class="{ spin: loading }" /></button>
       </div>
       <div class="table-wrap">
@@ -43,7 +43,7 @@
                 <div class="row">
                   <Layers class="ic" />
                   <b class="ellipsis">{{ i.Repository }}</b>
-                  <span v-if="Number(i.Containers) > 0" class="badge green" title="使用中のコンテナー数">使用中 {{ i.Containers }}</span>
+                  <span v-if="usedBy(i) > 0" class="badge green" title="このイメージを使っているコンテナー数 (停止中を含む)">使用中 {{ usedBy(i) }}</span>
                 </div>
               </td>
               <td><span class="badge blue">{{ i.Tag }}</span></td>
@@ -94,6 +94,8 @@ const loading = ref(false);
 const q = ref('');
 const selected = ref('');
 const historyFor = ref(null);
+// イメージ ID (sha256:...) → 使っているコンテナー数 (停止中を含む)。wslc の Containers 列は常に 0 のため自前で数える
+const usage = ref(null);
 const dockerfileEditor = ref(false);
 
 const key = (i) => `${i.ID}|${i.Repository}|${i.Tag}`;
@@ -108,11 +110,23 @@ async function refresh() {
   loading.value = true;
   try {
     images.value = await wslcJson(['images', '--format', 'json']);
+    usage.value = null;
+    const containers = await wslcJson(['list', '-a', '--format', 'json']);
+    const details = containers.length ? await inspect(containers.map((c) => c.ID)) : [];
+    const counts = {};
+    for (const c of details) if (c.Image) counts[c.Image] = (counts[c.Image] || 0) + 1;
+    usage.value = counts;
   } catch (e) {
     toast(e.message, 'error');
   } finally {
     loading.value = false;
   }
+}
+
+const bareId = (id) => String(id || '').replace(/^sha256:/, '');
+function usedBy(i) {
+  const id = bareId(i.ID);
+  return Object.entries(usage.value || {}).reduce((n, [imageId, count]) => n + (id && bareId(imageId).startsWith(id) ? count : 0), 0);
 }
 
 async function pull() {
@@ -132,14 +146,36 @@ async function load() {
   if (f?.[0]) runJob(`load ${f[0]}`, ['load', '-i', f[0]]);
 }
 
-async function prune(all) {
+async function prune() {
+  const ok = await confirm({ title: 'イメージの整理', message: 'タグのない (dangling) イメージを削除します。', okText: '削除', danger: true });
+  if (!ok) return;
+  await act(() => wslc(['image', 'prune', '-f']), {
+    success: (r) => (/:\s*0B\s*$/.test(r.trim()) ? '削除対象の dangling イメージはありませんでした' : r.trim() || '整理しました'),
+  });
+}
+
+/** どのコンテナー (停止中を含む) にも使われていないイメージを、一覧を確認してから削除する */
+async function pruneUnused() {
+  await refresh();
+  // 使用状況が取れないと全イメージを未使用と誤判定するため中止する
+  if (!usage.value) return toast('コンテナーの使用状況を取得できなかったため中止しました', 'error');
+  const unused = images.value.filter((i) => usedBy(i) === 0);
+  if (!unused.length) return toast('未使用のイメージはありません', 'info');
+  const size = bytes(unused.reduce((a, i) => a + parseSize(i.Size), 0));
   const ok = await confirm({
-    title: 'イメージの整理',
-    message: all ? 'どのコンテナーにも使われていないイメージをすべて削除します。' : 'タグのない (dangling) イメージを削除します。',
+    title: '未使用のイメージを削除',
+    message: `どのコンテナーにも使われていない ${unused.length} 個のイメージ (合計 ${size}) を削除します。\n\n${unused.map((i) => `・${ref_(i)} (${i.Size})`).join('\n')}`,
     okText: '削除',
     danger: true,
   });
-  if (ok) act(() => wslc(['image', 'prune', '-f', ...(all ? ['-a'] : [])]), { success: (r) => r.trim() || '整理しました' });
+  if (!ok) return;
+  const failed = [];
+  for (const i of unused) {
+    try { await wslc(['rmi', ref_(i)]); } catch (e) { failed.push(`${ref_(i)}: ${e.message}`); }
+  }
+  await refresh();
+  if (failed.length) toast(`削除できなかったイメージがあります\n${failed.join('\n')}`, 'error', 10000);
+  else toast(`${unused.length} 個のイメージを削除しました`, 'success');
 }
 
 function runImage(i, extra = {}) {
@@ -228,8 +264,8 @@ function onEmptyMenu(e) {
     { label: 'tar から読み込み…', icon: Upload, action: load },
     { label: '更新', icon: RefreshCw, action: refresh },
     { divider: true },
-    { label: 'dangling イメージを削除', icon: Eraser, danger: true, action: () => prune(false) },
-    { label: '未使用イメージをすべて削除', icon: Eraser, danger: true, action: () => prune(true) },
+    { label: 'dangling イメージを削除', icon: Eraser, danger: true, action: prune },
+    { label: '未使用イメージをすべて削除…', icon: Eraser, danger: true, action: pruneUnused },
   ]);
 }
 

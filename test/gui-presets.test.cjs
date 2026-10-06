@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { loadPresets, prepareBuild, presetFiles, savePresetFile } = require('../electron/gui/presets.cjs');
+const { loadPresets, prepareBuild, presetHash, presetFiles, savePresetFile } = require('../electron/gui/presets.cjs');
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wcs-presets-'));
@@ -165,4 +165,51 @@ test('editor lists preset files and saving a builtin copies it to the custom fol
   assert.equal(fs.readFileSync(path.join(options.customDir, 'app', 'conf', 'a.conf'), 'utf8'), 'x=2');
   assert.throws(() => savePresetFile('app', '../escape.txt', 'x', options), /編集できない/);
   assert.throws(() => savePresetFile('app', 'new-file', 'x', options), /編集できない/);
+});
+
+test('preset hash follows Dockerfiles of the preset and its base, but not display-only fields', (t) => {
+  const options = fixture(t);
+  const add = (id, extra = {}) => {
+    const dir = path.join(options.customDir, id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'Dockerfile'), `FROM scratch # ${id}`);
+    write(dir, 'preset.yaml', preset(id, extra));
+    return dir;
+  };
+  const base = add('base', { hidden: true, build: { context: '.' } });
+  const app = add('app', { build: { context: '.', requires: ['base'] } });
+  const first = presetHash('app', options);
+  assert.match(first, /^[0-9a-f]{16}$/);
+  assert.equal(presetHash('app', options), first);
+  write(app, 'preset.yaml', preset('app', { title: '名前だけ変更', color: '#123456', build: { context: '.', requires: ['base'] } }));
+  assert.equal(presetHash('app', options), first);
+  fs.writeFileSync(path.join(base, 'Dockerfile'), 'FROM scratch # base changed');
+  const afterBase = presetHash('app', options);
+  assert.notEqual(afterBase, first);
+  fs.writeFileSync(path.join(app, 'Dockerfile'), 'FROM scratch # app changed');
+  assert.notEqual(presetHash('app', options), afterBase);
+  write(app, 'preset.yaml', preset('app', { env: { A: '1' }, build: { context: '.', requires: ['base'] } }));
+  const withEnv = presetHash('app', options);
+  assert.notEqual(withEnv, afterBase);
+  assert.throws(() => presetHash('missing', options), /見つかりません/);
+});
+
+test('builtin build folder is updated in place: files are overwritten and stale entries removed', (t) => {
+  const options = fixture(t);
+  const dir = path.join(options.builtinsDir, 'base');
+  fs.mkdirSync(path.join(dir, 'conf'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Dockerfile'), 'FROM scratch # v1');
+  fs.writeFileSync(path.join(dir, 'conf', 'a'), 'a1');
+  write(dir, 'preset.yaml', preset('base', { build: { context: '.' } }));
+  const [first] = prepareBuild('base', options);
+  fs.writeFileSync(path.join(first.directory, 'stale.txt'), 'old');
+  fs.mkdirSync(path.join(first.directory, 'stale-dir'));
+  fs.writeFileSync(path.join(dir, 'Dockerfile'), 'FROM scratch # v2');
+  fs.writeFileSync(path.join(dir, 'conf', 'a'), 'a2');
+  const [second] = prepareBuild('base', options);
+  assert.equal(second.directory, first.directory);
+  assert.equal(fs.readFileSync(path.join(second.directory, 'Dockerfile'), 'utf8'), 'FROM scratch # v2');
+  assert.equal(fs.readFileSync(path.join(second.directory, 'conf', 'a'), 'utf8'), 'a2');
+  assert.equal(fs.existsSync(path.join(second.directory, 'stale.txt')), false);
+  assert.equal(fs.existsSync(path.join(second.directory, 'stale-dir')), false);
 });

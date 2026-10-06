@@ -166,7 +166,8 @@ export async function loadSettings() {
 }
 
 export async function saveSettings(patch) {
-  state.settings = await invoke('settings:set', patch);
+  // リアクティブな配列 (Proxy) は IPC で複製できないため、プレーンな値にして渡す
+  state.settings = await invoke('settings:set', JSON.parse(JSON.stringify(patch)));
   return state.settings;
 }
 

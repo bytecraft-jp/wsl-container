@@ -301,10 +301,14 @@ async function addProject(file) {
 }
 
 async function openExisting() {
-  const f = await invoke('fs:open', { filters: [{ name: 'Compose', extensions: ['yaml', 'yml'] }] });
-  if (!f?.[0]) return;
-  const p = await addProject(f[0]);
-  openProject(p);
+  try {
+    const f = await invoke('fs:open', { filters: [{ name: 'Compose', extensions: ['yaml', 'yml'] }] });
+    if (!f?.[0]) return;
+    const p = await addProject(f[0]);
+    await openProject(p);
+  } catch (e) {
+    toast(`開けませんでした: ${e.message}`, 'error');
+  }
 }
 
 async function pickNewDir() {
@@ -315,22 +319,37 @@ async function pickNewDir() {
 async function createProject() {
   const name = newName.value.trim().replace(/[^a-zA-Z0-9_-]/g, '');
   if (!name) return toast('プロジェクト名には英数字・-・_ を使ってください', 'warn');
-  const file = await invoke('fs:join', newDir.value, name, 'compose.yaml');
-  if (await invoke('fs:exists', file)) return toast('同じ場所に compose.yaml が既に存在します', 'error');
-  const tpl = COMPOSE_TEMPLATES.find((t) => t.id === newTpl.value);
-  await invoke('fs:write', file, tpl.yaml);
-  if (newTpl.value === 'nginx') {
-    await invoke('fs:write', await invoke('fs:join', newDir.value, name, 'html', 'index.html'), '<h1>Hello from WSL Container Studio!</h1>\n');
+  try {
+    const file = await invoke('fs:join', newDir.value, name, 'compose.yaml');
+    if (await invoke('fs:exists', file)) {
+      // 以前の作成で一覧への登録だけ失敗した場合などは、既存ファイルを開けるようにする
+      const ok = await confirm({ title: 'compose.yaml が既に存在します', message: `${file}\nを上書きせずに一覧へ追加して開きますか？`, okText: '開く' });
+      if (!ok) return;
+      showNew.value = false;
+      await openProject(await addProject(file));
+      return;
+    }
+    const tpl = COMPOSE_TEMPLATES.find((t) => t.id === newTpl.value);
+    await invoke('fs:write', file, tpl.yaml);
+    if (newTpl.value === 'nginx') {
+      await invoke('fs:write', await invoke('fs:join', newDir.value, name, 'html', 'index.html'), '<h1>Hello from WSL Container Studio!</h1>\n');
+    }
+    const p = await addProject(file);
+    showNew.value = false;
+    await openProject(p);
+    toast(`${name} を作成しました`, 'success');
+  } catch (e) {
+    toast(`作成できませんでした: ${e.message}`, 'error');
   }
-  showNew.value = false;
-  const p = await addProject(file);
-  openProject(p);
-  toast(`${name} を作成しました`, 'success');
 }
 
 async function removeProject(p) {
-  await saveSettings({ composeProjects: projects.value.filter((x) => x.file !== p.file) });
-  if (current.value?.file === p.file) current.value = null;
+  try {
+    await saveSettings({ composeProjects: projects.value.filter((x) => x.file !== p.file) });
+    if (current.value?.file === p.file) current.value = null;
+  } catch (e) {
+    toast(e.message, 'error');
+  }
 }
 
 async function save() {

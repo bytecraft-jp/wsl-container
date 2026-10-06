@@ -14,7 +14,7 @@
       <div class="preset-editor">
         <CodeEditor v-if="file" :key="file.name" v-model="file.content" :language="/\.ya?ml$/i.test(file.name) ? 'yaml' : 'text'" :readonly="busy" @save="save" />
       </div>
-      <p class="muted small">保存後、プリセット一覧を再読み込みします。Dockerfile の変更は次回の「起動」でのビルドから反映されます（既存のコンテナーは再利用されるため、反映するには削除してから起動してください）。</p>
+      <p class="muted small">保存後、プリセット一覧を再読み込みします。定義ファイル・Dockerfile の変更は次回の「起動」で反映されます（ビルドし直し、既存のコンテナーを作り直します。設定ボリュームは保持します）。共通ベースを変更した場合は、それを使う各アプリにも反映されます。</p>
     </template>
     <template #footer>
       <button class="btn" :disabled="!data || data.kind === 'builtin'" @click="showFolder"><FolderOpen />フォルダーを開く</button>

@@ -93,27 +93,34 @@ Windows標準の `C:\Program Files\WSL\wslc.exe` を利用します。「設定 
 
 - 対応: `image` `build` `command` `entrypoint` `environment` `env_file` `.env` の変数展開 `ports` `volumes` `networks` `depends_on` (`service_healthy` / `service_completed_successfully` の待機を含む) `healthcheck` `container_name` `working_dir` `user` `hostname` `tty` `stdin_open` `shm_size` `mem_limit` `cpus` `deploy.resources` `gpus` `tmpfs` `dns` `ulimits` `stop_signal` `stop_grace_period` `labels`
 - 未対応 (警告を出して無視): `restart` `privileged` `cap_add` `extra_hosts` `devices` など。`wslc run` に該当オプションがないためです。
-- 設定が変わっていないサービスは再作成しません (設定のハッシュをラベルに保存して比較)。
+- `build` を持つサービスは up のたびにビルドします (変更がなければキャッシュで終わります)。Dockerfile やビルドコンテキストを編集したら up だけで反映されます。
+- 設定とイメージが変わっていないサービスは再作成しません (設定のハッシュをラベルに保存し、イメージ ID と合わせて比較)。
 - GUI で編集すると YAML のコメントは失われます。コメントを残したい場合はテキストモードで編集してください。
 
 ### Dockerfile の作成・編集
 
-通常の CLI アプリ・サーバー用 Dockerfile は「Compose」または「イメージ」画面の「Dockerfile を作成・編集」から作成します。Compose 画面では開いているプロジェクトを使い、イメージ画面では参照元の Compose プロジェクトを選択します。既定では `compose.yaml` と同じフォルダーの `Dockerfile` に保存し、選択サービスに `build.context` / `build.dockerfile` があればその参照先を使います。エディターには Compose のサービスに貼り付ける `build` 設定を表示します。Ubuntu・Alpine・空のテンプレート、既存ファイルの編集、Ctrl+S 保存、下書き保持に対応しています。保存によってビルドは実行されません。
+通常の CLI アプリ・サーバー用 Dockerfile は「Compose」または「イメージ」画面の「Dockerfile を作成・編集」から作成します。Compose 画面では開いているプロジェクトを使い、イメージ画面では参照元の Compose プロジェクトを選択します。既定では `compose.yaml` と同じフォルダーの `Dockerfile` に保存し、選択サービスに `build.context` / `build.dockerfile` があればその参照先を使います。エディターには Compose のサービスに貼り付ける `build` 設定を表示します。Ubuntu・Alpine・空のテンプレート、既存ファイルの編集、Ctrl+S 保存、下書き保持に対応しています。保存によってビルドは実行されません。次回の「起動 (up)」でビルドし、イメージが変わったコンテナーを作り直します。
 
 ### GUI アプリについて
 
 wslc のコンテナーには WSLg (X11 / Wayland) のソケットが渡されません (実機で確認済み)。
 そこでコンテナー内で noVNC などの Web 画面を動かし、アプリ内のビューアーウィンドウで表示します。
 
-- 全9プリセットは、[共通の Ubuntu ベース](electron/gui/presets/ubuntu-base/Dockerfile)（`FROM ubuntu:22.04`）にアプリをインストールした Dockerfile です。各アプリの Dockerfile は「`FROM wcs-gui/ubuntu-base:22.04` → `apt-get install` → `CMD` に起動コマンド」の形で、個別の起動用スクリプトは持ちません。「起動」でベース → アプリの順に自動ビルドします。
+- 全9プリセットは、[共通の Ubuntu ベース](electron/gui/presets/ubuntu-base/Dockerfile)（`FROM ubuntu:22.04`）にアプリをインストールした Dockerfile です。各アプリの Dockerfile は「`FROM wcs-gui/ubuntu-base:22.04` → `apt-get install` → `CMD` に起動コマンド」の形で、個別の起動用スクリプトは持ちません。「起動」でベース → アプリの順に自動ビルドします。共通ベースは「GUI アプリ → 共通ベース」のカードから定義ファイル・Dockerfile の編集とビルドができます。
 - ベースに入れているのは、日本語ロケール・日本語フォント・TigerVNC/noVNC（コンテナー側5800）・Fcitx5＋Mozc だけです。[gui-session.sh](electron/gui/presets/ubuntu-base/gui-session.sh) が画面と日本語入力を起動し、`CMD` のアプリを一般ユーザー（uid 1000、ホーム `/config`＝設定ボリューム）で実行します。アプリを終了するとコンテナーも停止します。
 - 日本語入力は Windows と同じ **「半角／全角」キー**で切り替えます。ローマ字で入力し、`Space` で変換、`Enter` で確定します。設定は [fcitx5/](electron/gui/presets/ubuntu-base/fcitx5/) にあります。
 - [Firefox](electron/gui/presets/firefox/Dockerfile) は Mozilla 公式 APT リポジトリー、[Chrome](electron/gui/presets/chrome/Dockerfile) は Google 公式 `.deb`、[VS Code](electron/gui/presets/vscode/Dockerfile) は [Microsoft 公式 APT リポジトリー](https://code.visualstudio.com/docs/setup/linux)、その他は Ubuntu の APT パッケージからインストールします。VS Code はデスクトップ版に日本語言語パックを追加し、noVNC で表示します。Chrome と VS Code はコンテナー内でサンドボックスを使えないため `--no-sandbox` で起動します。
 - [GNOME](electron/gui/presets/ubuntu-gnome/Dockerfile) は Ubuntu 標準のセッション（ドック付き）、[KDE](electron/gui/presets/ubuntu-kde/Dockerfile)・[XFCE](electron/gui/presets/ubuntu-xfce/Dockerfile) は各デスクトップをそのまま起動します。
 - Windows 側ポートは Firefox 5800、Chrome 3100、XFCE 3200、LibreOffice 3300、GNOME 3400、KDE 3500、Thunderbird 5810、FileZilla 5820、VS Code 8443 です。コンテナー名は `wcs-gui-<id>`、設定ボリュームは `wcs-gui-<id>-config` です。
-- 同梱プリセットのビルド用ファイルは、ビルドのたびに `data/gui-builds/<id>/` へ作り直します。各カードの「定義ファイル…」「Dockerfile…」でアプリ内のエディターが開き、プリセットのフォルダー内のファイルをタブで切り替えて編集できます（Ctrl+S で保存）。同梱プリセットを保存すると、フォルダーごと `data/gui-presets/<id>/` にコピーしてそちらを編集します（同じ `id` のため同梱定義より優先されます）。
+- 同梱プリセットのビルド用ファイルは、ビルドのたびに `data/gui-builds/<id>/` へ作り直します。各カードの「定義ファイル…」「Dockerfile…」でアプリ内のエディターが開き、プリセットのフォルダー内のファイルをタブで切り替えて編集できます（Ctrl+S で保存）。同梱プリセットを保存すると、フォルダーごと `data/gui-presets/<id>/` にコピーしてそちらを編集します（同じ `id` のため同梱定義より優先されます）。`data/gui-builds/<id>/` を直接編集しても次のビルドで上書きされるため、必ずエディターか `data/gui-presets/` 側を編集してください。
+- 「起動」では、定義ファイルと Dockerfile (依存する共通ベースを含む) のハッシュを既存コンテナーのラベル `wcs.gui.hash` と比べます。変わっていればビルドし直してコンテナーを作り直します（設定ボリュームは保持）。
 - 「自作 GUI アプリ」も `wcs-gui/ubuntu-base:22.04` をベースに、指定した apt パッケージと起動コマンドで Dockerfile を生成します。
-- 自作 GUI アプリの Dockerfile は画面下部で直接編集できます。フォーム変更時は手編集を保持し、ドラフトは画面移動・再起動後も復元します。「保存」または Ctrl+S で `data/gui-builds/<アプリ名>/Dockerfile` と `startapp.sh` を書き出し、「保存してフォルダーを開く」で確認できます。フォームから作り直す場合は「Dockerfile を再生成」を使います。`build.bat` はこの管理アプリの exe を作るためのファイルです。
+- 自作 GUI アプリは次の流れで使います。
+  1. 画面下部のフォームに入力します。Dockerfile は右側で直接編集でき、下書きは画面移動・再起動後も復元します（フォームを変えても手編集は保持。作り直す場合は「Dockerfile を再生成」）。
+  2. 「プリセットとして保存」(Ctrl+S) で `data/gui-presets/<id>/` に `Dockerfile`・`startapp.sh`・`preset.yaml` を書き出します。上の「プリセット」一覧に「自作」のカードとして表示されます。
+  3. カードの「起動」(またはフォームの「保存して起動」) で共通ベース → アプリの順にビルドして起動します。
+  4. 以降はカードの「Dockerfile…」「定義ファイル…」で編集して保存し、「起動」を押すと変更をビルドしてコンテナーを作り直します。フォームから保存し直すとファイルを上書きするため、内容が異なる場合は確認します（「保存済みを読み込む」で保存済みの Dockerfile を下書きに取り込めます）。
+- `build.bat` はこの管理アプリの exe を作るためのファイルです。
 - 任意のイメージでも、実行ダイアログの「GUI」タブでポートを指定すれば同じビューアーで開けます。compose では `x-wcs-gui: { port: <ホスト側ポート> }` を書きます。
 
 ### GUI プリセットをファイルで追加する
@@ -131,7 +138,7 @@ guiPath: /vnc.html?autoconnect=1&resize=remote
 
 上の例は同梱 Firefox を一度ビルドしてから使います。独自ビルドは `data/gui-presets/<名前>/preset.yaml` と同じフォルダーに Dockerfile を置き、定義に `build: { context: ., requires: [ubuntu-base] }` を追加します。「起動」で共通ベースから順にビルドして実行できます。同梱プリセットも [electron/gui/presets/](electron/gui/presets/) の各フォルダーに `preset.yaml` と Dockerfile をまとめ、コンテナーのイメージ・設定ボリューム・ビューアーの接続先を紐づけています。自作定義に同じ `id` を付けると同梱定義を上書きします。
 
-初回に `data/gui-presets/examples/` へ見本と説明をコピーします。[追加方法と全項目](electron/gui/examples/README.md)を参照してください。自作プリセットは自分のフォルダーをそのままビルドします。定義を変更した後も既存コンテナーは再利用するため、環境変数などを適用する場合は再作成してください。
+初回に `data/gui-presets/examples/` へ見本と説明をコピーします。[追加方法と全項目](electron/gui/examples/README.md)を参照してください。自作プリセットは自分のフォルダーをそのままビルドします。定義や Dockerfile を変更すると、次回の「起動」でコンテナーを作り直して反映します。
 
 ### Docker Hub の認証
 

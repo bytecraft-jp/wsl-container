@@ -9,7 +9,7 @@ const INVOKE = new Set([
   'registry:login', 'registry:logout',
   'settings:get', 'settings:set', 'settings:setSecret',
   'storage:get', 'storage:setPath', 'storage:compact',
-  'gui-presets:list', 'gui-presets:prepare-build', 'gui-presets:files', 'gui-presets:save-file',
+  'gui-presets:list', 'gui-presets:prepare-build', 'gui-presets:hash', 'gui-presets:files', 'gui-presets:save-file',
   'fs:open', 'fs:save', 'fs:read', 'fs:write', 'fs:exists', 'fs:join', 'fs:dirname', 'fs:resolve', 'fs:relative',
   'app:paths', 'app:openExternal', 'app:openPath', 'app:showItem', 'app:openViewer',
 ]);

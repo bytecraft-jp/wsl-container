@@ -1,4 +1,5 @@
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const path = require('node:path');
 const YAML = require('yaml');
 
@@ -132,6 +133,8 @@ function loadPresets({ builtinsDir, customDir, examplesDir }) {
         const preset = normalize(raw, file, kind, dir);
         if (seen.has(preset.id)) throw new Error(`id「${preset.id}」が同じ保存先内で重複しています`);
         seen.add(preset.id);
+        // 同梱プリセットを上書きしている自作プリセット (同梱プリセットを編集して保存したもの)
+        if (kind === 'custom' && presets.get(preset.id)?.sourceKind === 'builtin') preset.overridesBuiltin = true;
         presets.set(preset.id, preset);
       } catch (e) { errors.push({ file, message: e.message }); }
     }
@@ -169,14 +172,41 @@ function prepareDefinition(p, options) {
   const directory = path.join(options.buildsDir, p.id);
   fs.mkdirSync(options.buildsDir, { recursive: true });
   if (fs.existsSync(directory) && fs.lstatSync(directory).isSymbolicLink()) throw new Error('ビルド先にリンクは使用できません');
-  fs.rmSync(directory, { recursive: true, force: true });
-  fs.mkdirSync(directory);
-  copyContext(p.build.context, directory);
+  fs.mkdirSync(directory, { recursive: true });
+  mirrorContext(p.build.context, directory);
   return { directory, dockerfile: p.build.dockerfile };
 }
 
-function prepareBuild(id, options) {
-  const presets = new Map(loadPresets(options).presets.map(p => [p.id, p]));
+/**
+ * destination を source と同じ内容にする。フォルダーは消さずにファイルを上書きし、source にないものだけ削除する。
+ * Windows ではエクスプローラーなどがフォルダーのハンドルを持っていると、削除が ENOTEMPTY になったり、
+ * 削除直後の同名フォルダーの作成が EPERM になったりするため
+ */
+function mirrorContext(source, destination) {
+  const entries = fs.readdirSync(source, { withFileTypes: true });
+  const names = new Set(entries.map((entry) => entry.name));
+  for (const name of fs.readdirSync(destination)) {
+    if (!names.has(name)) fs.rmSync(path.join(destination, name), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+  for (const entry of entries) {
+    const from = path.join(source, entry.name);
+    const to = path.join(destination, entry.name);
+    if (entry.isSymbolicLink()) throw new Error(`ビルド用ファイルにリンクは使用できません: ${from}`);
+    const existing = fs.existsSync(to) ? fs.lstatSync(to) : null;
+    if (existing?.isSymbolicLink()) throw new Error(`ビルド先にリンクは使用できません: ${to}`);
+    if (entry.isDirectory()) {
+      if (existing && !existing.isDirectory()) fs.rmSync(to, { force: true, maxRetries: 10, retryDelay: 100 });
+      fs.mkdirSync(to, { recursive: true });
+      mirrorContext(from, to);
+    } else if (entry.isFile()) {
+      if (existing?.isDirectory()) fs.rmSync(to, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      fs.copyFileSync(from, to);
+    }
+  }
+}
+
+/** id のプリセットと、build.requires で依存するプリセットをビルド順に並べる */
+function buildOrder(id, presets) {
   const ordered = [];
   const visiting = new Set();
   const visited = new Set();
@@ -192,7 +222,44 @@ function prepareBuild(id, options) {
     ordered.push(p);
   }
   visit(id);
-  return ordered.map(p => ({ id: p.id, title: p.title, image: p.image, ...prepareDefinition(p, options) }));
+  return ordered;
+}
+
+function prepareBuild(id, options) {
+  const presets = new Map(loadPresets(options).presets.map(p => [p.id, p]));
+  return buildOrder(id, presets).map(p => ({ id: p.id, title: p.title, image: p.image, ...prepareDefinition(p, options) }));
+}
+
+// skip: 定義ファイル。内容は正規化した設定としてハッシュに含めるため、表示用の項目の変更では作り直さない
+function hashContext(hash, dir, skip, prefix = '') {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) hashContext(hash, full, skip, relative);
+    else if (entry.isFile() && full !== skip) hash.update(`${relative}\0`).update(fs.readFileSync(full)).update('\0');
+  }
+}
+
+// 表示だけに使う項目。変更してもコンテナーを作り直さない
+const DISPLAY_KEYS = new Set(['title', 'description', 'color', 'order', 'hidden', 'sourceFile', 'sourceKind', 'overridesBuiltin', 'build', 'readyCommand']);
+
+/**
+ * プリセットの内容のハッシュ。依存するプリセット (共通ベースなど) のビルド用ファイルと、
+ * コンテナーの実行設定を含む。起動時に既存コンテナーのラベルと比べ、変更があれば作り直す。
+ */
+function presetHash(id, options) {
+  const presets = new Map(loadPresets(options).presets.map(p => [p.id, p]));
+  const p = presets.get(id);
+  if (!p) throw new Error('プリセットが見つかりません。再読み込みしてください');
+  const hash = crypto.createHash('sha256');
+  hash.update(JSON.stringify(Object.entries(p).filter(([key]) => !DISPLAY_KEYS.has(key))));
+  if (p.build) {
+    for (const item of buildOrder(id, presets)) {
+      hash.update(`\0${item.id}\0${item.image}\0${item.build.dockerfile}\0`);
+      hashContext(hash, item.build.context, fs.realpathSync(item.sourceFile));
+    }
+  }
+  return hash.digest('hex').slice(0, 16);
 }
 
 // ---- エディター用: プリセットのファイルの読み書き ----
@@ -260,4 +327,4 @@ function savePresetFile(id, name, content, options) {
   return { path: target, directory };
 }
 
-module.exports = { loadPresets, prepareBuild, presetFiles, savePresetFile };
+module.exports = { loadPresets, prepareBuild, presetHash, presetFiles, savePresetFile };

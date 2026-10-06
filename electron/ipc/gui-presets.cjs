@@ -12,6 +12,7 @@ const options = () => ({
 module.exports = function registerGuiPresets({ handle }) {
   handle('gui-presets:list', () => guiPresets.loadPresets(options()));
   handle('gui-presets:prepare-build', (id) => guiPresets.prepareBuild(id, options()));
+  handle('gui-presets:hash', (id) => guiPresets.presetHash(id, options()));
   handle('gui-presets:files', (id) => guiPresets.presetFiles(id, options()));
   handle('gui-presets:save-file', (id, name, content) => guiPresets.savePresetFile(id, name, content, options()));
 };
